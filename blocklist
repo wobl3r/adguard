@@ -1,3 +1,5 @@
+# Blocking unwanted IP's from getting requests from my Adguard DNS server.
+# curl -s https://api.bgpview.io/asn/396356/prefixes | jq -r '.data.ipv4_prefixes[].prefix | "$client=" + .' | xclip -selection clipboard
 $client=112.13.105.0/24
 $client=27.109.125.0/24
 $client=111.161.115.0/24 
