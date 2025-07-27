@@ -1,52 +1,58 @@
 #!/bin/bash
 
-# Check for required tools
-command -v jq >/dev/null 2>&1 || { echo >&2 "jq is required but not installed. Install with: sudo apt install jq"; exit 1; }
-command -v curl >/dev/null 2>&1 || { echo >&2 "curl is required but not installed."; exit 1; }
+# Description:
+#   Reads a list of ASNs from a text file (with optional inline comments)
+#   Queries bgpview.io for their IP prefixes
+#   Prints or applies iptables/ip6tables rules to block them
 
-# Usage message
-usage() {
-    echo "Usage: $0 [--apply] <asn_input_file>"
-    echo "  --apply    Actually execute iptables commands"
-    exit 1
-}
+# Usage:
+#   ./block_asns.sh asns.txt             # Dry run (print rules only)
+#   sudo ./block_asns.sh --apply asns.txt # Apply rules via iptables
 
-# Parse arguments
 APPLY=false
-if [ "$1" == "--apply" ]; then
+
+# Check for --apply or -a flag
+if [[ "$1" == "-a" || "$1" == "--apply" ]]; then
     APPLY=true
     shift
 fi
 
-# Ensure input file is provided
-if [ $# -ne 1 ]; then
-    usage
-fi
-
 ASN_FILE="$1"
-if [ ! -f "$ASN_FILE" ]; then
-    echo "Error: File '$ASN_FILE' not found."
+
+if [[ ! -f "$ASN_FILE" ]]; then
+    echo "Error: ASN input file not found: $ASN_FILE"
     exit 1
 fi
 
-while IFS= read -r ASN; do
-    ASN_CLEAN=$(echo "$ASN" | tr -d '[:space:]')
-    if [[ ! "$ASN_CLEAN" =~ ^[0-9]+$ ]]; then
-        echo "Skipping invalid ASN: $ASN_CLEAN"
+# Check required tool: jq
+if ! command -v jq &>/dev/null; then
+    echo "Error: 'jq' is required but not installed. Try: sudo apt install jq"
+    exit 1
+fi
+
+# Process ASNs, skipping empty lines and full-line comments
+grep -vE '^\s*#|^\s*$' "$ASN_FILE" | while read -r LINE; do
+    # Strip inline comment and whitespace
+    ASN=$(echo "$LINE" | cut -d'#' -f1 | tr -d '[:space:]')
+
+    # Validate ASN format
+    if [[ ! "$ASN" =~ ^[0-9]+$ ]]; then
+        echo "Skipping invalid ASN line: $LINE"
         continue
     fi
 
-    echo "Fetching prefixes for AS$ASN_CLEAN..."
+    echo "🔍 Fetching prefixes for AS$ASN..."
 
-    PREFIXES=$(curl -s "https://api.bgpview.io/asn/$ASN_CLEAN/prefixes" | jq -r '.data.ipv4_prefixes[].prefix')
+    RESPONSE=$(curl -s "https://api.bgpview.io/asn/$ASN/prefixes")
 
-    if [ -z "$PREFIXES" ]; then
-        echo "No prefixes found for AS$ASN_CLEAN"
+    if [[ -z "$RESPONSE" ]]; then
+        echo "Failed to fetch data for AS$ASN"
         continue
     fi
 
-    for IP in $PREFIXES; do
-        CMD="iptables -A INPUT -s $IP -j DROP"
+    # IPv4 prefixes
+    echo "$RESPONSE" | jq -r '.data.ipv4_prefixes[].prefix' | while read -r PREFIX; do
+        CMD="iptables -A INPUT -s $PREFIX -j DROP"
         if $APPLY; then
             echo "Applying: $CMD"
             sudo $CMD
@@ -55,4 +61,16 @@ while IFS= read -r ASN; do
         fi
     done
 
-done < "$ASN_FILE"
+    # IPv6 prefixes
+    echo "$RESPONSE" | jq -r '.data.ipv6_prefixes[].prefix' | while read -r PREFIX; do
+        CMD="ip6tables -A INPUT -s $PREFIX -j DROP"
+        if $APPLY; then
+            echo "Applying: $CMD"
+            sudo $CMD
+        else
+            echo "$CMD"
+        fi
+    done
+
+done
+
