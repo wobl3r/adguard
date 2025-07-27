@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Fetch Brazilian ASNs using BGPView API and save to a file
+
+curl -s "https://api.bgpview.io/countries/BR/asns" \
+  | jq -r '.data.asns[] | .asn' > brazil_asns.txt
+
+echo "Saved $(wc -l < brazil_asns.txt) ASNs to brazil_asns.txt"
