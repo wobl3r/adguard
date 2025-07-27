@@ -1,6 +1,10 @@
 # Blocking unwanted IP's from getting requests from my Adguard DNS server.
 # Goto https://bgpview.io and get the ASN number and use the following command.
 # curl -s https://api.bgpview.io/asn/396356/prefixes | jq -r '.data.ipv4_prefixes[].prefix | "$client=" + .' | xclip -selection clipboard
+#
+# Another better option is to go and put the rules straight onto IPtables
+# for ip in $(curl -s https://api.bgpview.io/asn/262907/prefixes | jq -r '.data.ipv4_prefixes[].prefix'); do   sudo iptables -A INPUT -s "$ip" -j DROP; done
+
 $client=112.13.105.0/24
 $client=27.109.125.0/24
 $client=111.161.115.0/24 
