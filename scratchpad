@@ -1,0 +1,27 @@
+curl -s https://api.bgpview.io/asn/4230/prefixes | jq -r '.data.ipv4_prefixes[].prefix' | while read prefix; do sudo ipset add br_bad "$prefix"; done
+
+
+curl -s https://api.bgpview.io/asn/263175/prefixes | jq -r '.data.ipv4_prefixes[].prefix' | while read prefix; do sudo ipset add france_bad "$prefix"; done
+
+sudo iptables -I INPUT -m set --match-set france_blacklist src -j DROP
+
+
+for asn in 269656 263408 266431 262583 267047 28590 264185; do \
+  curl -s "https://api.bgpview.io/asn/$asn/prefixes" | jq -r '.data.ipv4_prefixes[]?.prefix // empty' | \
+    while read prefix; do sudo ipset add br_bad "$prefix" -exist; done; \
+  curl -s "https://api.bgpview.io/asn/$asn/downstreams" | jq -r '.data.downstreams[]?.asn // empty' | \
+    while read subasn; do \
+      curl -s "https://api.bgpview.io/asn/$subasn/prefixes" | jq -r '.data.ipv4_prefixes[]?.prefix // empty' | \
+      while read prefix; do sudo ipset add br_bad "$prefix" -exist; done; \
+      sleep 1; \
+    done; \
+  sleep 1; \
+done
+
+curl -s https://api.bgpview.io/asn/264185/prefixes | jq -r '.data.ipv4_prefixes[].prefix' | while read prefix; do sudo ipset add br_bad "$prefix"; done
+
+
+sudo ipset create Burkina_Faso_blacklist hash:net
+curl -s https://www.ipdeny.com/ipblocks/data/countries/bf.zone -o /tmp/bf.zone
+while read ip; do sudo ipset add Burkina_Faso_blacklist "$ip"; done < /tmp/bf.zone
+sudo iptables -I INPUT -m set --match-set Burkina_Faso_blacklist src -j DROP
